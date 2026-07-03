@@ -4,7 +4,7 @@ import { z } from "zod";
 
 // 👇 Change these two to match your actual repo
 const GITHUB_OWNER = "Lokeny2";
-const GITHUB_REPO = "tansales";
+const GITHUB_REPO = "mcp-server";
 const GITHUB_BRANCH = "main"; // or "master", whatever your default branch is called
 
 // A small helper that talks to GitHub's API on your tools' behalf
