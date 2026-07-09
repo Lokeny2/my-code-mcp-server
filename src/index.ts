@@ -93,84 +93,91 @@ export class MyMCP extends McpAgent<Env> {
     );
 
     // Tool 3: "replace this file's contents with new content"
-this.server.registerTool(
-  "write_file",
-  {
-    inputSchema: {
-      path: z
-        .string()
-        .describe("Full file path inside the repo, e.g. 'convex/auth.ts'"),
-      content: z
-        .string()
-        .describe("The complete new content the file should contain"),
-      message: z
-        .string()
-        .optional()
-        .describe("A short commit message describing the change"),
-    },
-  },
-  async ({ path, content, message }) => {
-    const token = (this.env as any).GITHUB_TOKEN as string | undefined;
-
-    if (!token) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Error: no GITHUB_TOKEN configured. Writing requires an authenticated token, even for public repos.",
-          },
-        ],
-      };
-    }
-
-    // Check whether the file already exists, so we can include its
-    // current version stamp (GitHub calls this the file's "sha").
-    let sha: string | undefined;
-    try {
-      const existing: any = await githubFetch(
-        `/contents/${path}?ref=${GITHUB_BRANCH}`,
-        token,
-      );
-      sha = existing.sha;
-    } catch {
-      // No existing file — that's fine, we'll create a new one.
-    }
-
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+    this.server.registerTool(
+      "write_file",
       {
-        method: "PUT",
-        headers: {
-          "User-Agent": "my-code-mcp-server",
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token}`,
+        inputSchema: {
+          path: z
+            .string()
+            .describe("Full file path inside the repo, e.g. 'convex/auth.ts'"),
+          content: z
+            .string()
+            .describe("The complete new content the file should contain"),
+          message: z
+            .string()
+            .optional()
+            .describe("A short commit message describing the change"),
         },
-        body: JSON.stringify({
-          message: message || `Update ${path} via Claude`,
-          content: utf8ToBase64(content),
-          branch: GITHUB_BRANCH,
-          ...(sha ? { sha } : {}),
-        }),
+      },
+      async ({ path, content, message }) => {
+        const token = (this.env as any).GITHUB_TOKEN as string | undefined;
+
+        if (!token) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: no GITHUB_TOKEN configured. Writing requires an authenticated token, even for public repos.",
+              },
+            ],
+          };
+        }
+
+        // Check whether the file already exists, so we can include its
+        // current version stamp (GitHub calls this the file's "sha").
+        let sha: string | undefined;
+        try {
+          const existing: any = await githubFetch(
+            `/contents/${path}?ref=${GITHUB_BRANCH}`,
+            token,
+          );
+          sha = existing.sha;
+        } catch {
+          // No existing file — that's fine, we'll create a new one.
+        }
+
+        const res = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+          {
+            method: "PUT",
+            headers: {
+              "User-Agent": "my-code-mcp-server",
+              Accept: "application/vnd.github+json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              message: message || `Update ${path} via Claude`,
+              content: utf8ToBase64(content),
+              branch: GITHUB_BRANCH,
+              ...(sha ? { sha } : {}),
+            }),
+          },
+        );
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`GitHub write failed: ${res.status} ${errorText}`);
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Successfully wrote to ${path} on branch ${GITHUB_BRANCH}.`,
+            },
+          ],
+        };
       },
     );
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`GitHub write failed: ${res.status} ${errorText}`);
-    }
-
-    return {
-      content: [
-        { type: "text", text: `Successfully wrote to ${path} on branch ${GITHUB_BRANCH}.` },
-      ],
-    };
-  },
-);
   }
 }
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const password = request.headers.get("x-api-key");
+    if (password !== env.MCP_API_KEY) {
+      return new Response("Forbidden", { status: 403 });
+    }
     const url = new URL(request.url);
 
     if (url.pathname === "/mcp") {

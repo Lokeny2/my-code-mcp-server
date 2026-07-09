@@ -11,7 +11,9 @@ declare namespace Cloudflare {
 	}
 	interface Env extends __BaseEnv_Env {}
 }
-interface Env extends __BaseEnv_Env {}
+interface Env extends __BaseEnv_Env {
+  MCP_API_KEY: string | null;
+}
 
 // Begin runtime types
 /*! *****************************************************************************
