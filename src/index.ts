@@ -169,6 +169,77 @@ export class MyMCP extends McpAgent<Env> {
         };
       },
     );
+
+    // Tool 4: "remove this file from the repo entirely"
+this.server.registerTool(
+  "remove_files",
+  {
+    inputSchema: {
+      paths: z
+        .array(z.string())
+        .describe("One or more full file paths inside the repo to delete, e.g. ['src/lib/old.ts']"),
+      message: z
+        .string()
+        .optional()
+        .describe("A short commit message describing the deletion"),
+    },
+  },
+  async ({ paths, message }) => {
+    const token = (this.env as any).GITHUB_TOKEN as string | undefined;
+
+    if (!token) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Error: no GITHUB_TOKEN configured. Deleting requires an authenticated token.",
+          },
+        ],
+      };
+    }
+
+    const results: string[] = [];
+
+    for (const path of paths) {
+      try {
+        // Look up the file's current version stamp -- GitHub requires
+        // this to confirm we're deleting the version we think we are.
+        const existing: any = await githubFetch(
+          `/contents/${path}?ref=${GITHUB_BRANCH}`,
+          token,
+        );
+
+        const res = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+          {
+            method: "DELETE",
+            headers: {
+              "User-Agent": "my-code-mcp-server",
+              Accept: "application/vnd.github+json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              message: message || `Delete ${path} via Claude`,
+              sha: existing.sha,
+              branch: GITHUB_BRANCH,
+            }),
+          },
+        );
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          results.push(`FAILED: ${path} -> ${res.status} ${errorText}`);
+        } else {
+          results.push(`Deleted: ${path}`);
+        }
+      } catch (err: any) {
+        results.push(`FAILED: ${path} -> ${err.message}`);
+      }
+    }
+
+    return { content: [{ type: "text", text: results.join("\n") }] };
+  },
+);
   }
 }
 
